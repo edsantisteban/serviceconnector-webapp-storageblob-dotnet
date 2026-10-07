@@ -2,6 +2,7 @@
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using Azure.Core;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 
@@ -9,10 +10,18 @@ namespace WebStorageSample
 {
     public class StorageHelper
     {
+        private static TokenCredential GetCredential()
+        {
+            var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+            return env == "Development"
+                ? new AzureCliCredential()          // local: usa tu sesión de az login
+                : new DefaultAzureCredential();     // en Azure: usa la identidad administrada
+        }
+
         static public async Task UploadBlob(string containerEndpoint, string containerName, string blobName, string blobContents)
         {
             var blobContainerUri = new Uri(new Uri(containerEndpoint), containerName);
-            BlobContainerClient containerClient = new BlobContainerClient(blobContainerUri, new DefaultAzureCredential());
+            BlobContainerClient containerClient = new BlobContainerClient(blobContainerUri, GetCredential());
 
             try
             {
@@ -29,16 +38,16 @@ namespace WebStorageSample
                     await blobClient.UploadAsync(stream, overwrite: true);
                 }
             }
-            catch (Exception e)
+            catch (Exception)
             {
-                throw e;
+                throw;
             }
         }
 
         static public async Task<string> GetBlob(string containerEndpoint, string containerName, string blobName)
         {
             var blobContainerUri = new Uri(new Uri(containerEndpoint), containerName);
-            BlobContainerClient containerClient = new BlobContainerClient(blobContainerUri, new DefaultAzureCredential());
+            BlobContainerClient containerClient = new BlobContainerClient(blobContainerUri, GetCredential());
 
             try
             {
@@ -61,9 +70,9 @@ namespace WebStorageSample
                 }
                 return "";
             }
-            catch (Exception e)
+            catch (Exception)
             {
-                throw e;
+                throw;
             }
         }
     }
