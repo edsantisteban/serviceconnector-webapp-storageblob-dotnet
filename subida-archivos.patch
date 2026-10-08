@@ -1,0 +1,338 @@
+diff --git a/Pages/Index.cshtml b/Pages/Index.cshtml
+index 3ab928c..879394e 100644
+--- a/Pages/Index.cshtml
++++ b/Pages/Index.cshtml
+@@ -1,10 +1,36 @@
+ ﻿@page
+ @model IndexModel
+ @{
+-    ViewData["Title"] = "Home page";
++    ViewData["Title"] = "Subir archivo";
+ }
+ 
+-<div class="text-center">
+-    <h1 class="display-4">@Html.DisplayFor(IndexModel => IndexModel.DisplayWords)</h1>
+-    <p>Learn about <a href="https://docs.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+-</div>
++<section class="upload-panel" aria-labelledby="upload-title">
++    <div class="upload-heading">
++        <span class="upload-badge">TU ESPACIO DE ARCHIVOS</span>
++        <h1 id="upload-title">Sube tu archivo</h1>
++        <p>Selecciona un archivo de tu dispositivo y guárdalo en la nube.</p>
++    </div>
++
++    @if (!string.IsNullOrEmpty(Model.SuccessMessage))
++    {
++        <div class="alert alert-success upload-message" role="status">@Model.SuccessMessage</div>
++    }
++    <div asp-validation-summary="All" class="alert alert-danger upload-message" role="alert"></div>
++
++    <form method="post" enctype="multipart/form-data" id="upload-form" data-max-file-size="@IndexModel.MaxFileSize">
++        <div class="upload-picker">
++            <label for="UploadedFile">Seleccionar archivo</label>
++            <p id="file-help">Cualquier tipo de archivo · Máximo 20 MB</p>
++            <input asp-for="UploadedFile" type="file" required aria-describedby="file-help selected-file" />
++            <p id="selected-file" class="selected-file" role="status">Ningún archivo seleccionado.</p>
++        </div>
++        <p class="upload-note">Se conservará el nombre original. Si ya existe, deberás renombrar tu archivo para subirlo.</p>
++        <button type="submit" class="btn btn-primary upload-button" id="upload-button">Subir archivo</button>
++        <p id="upload-status" class="upload-status" role="status"></p>
++        <p class="upload-note">Si ocurre un error, vuelve a seleccionar el archivo para intentarlo de nuevo.</p>
++    </form>
++</section>
++
++@section Scripts {
++    <script src="~/js/upload.js" asp-append-version="true"></script>
++}
+diff --git a/Pages/Index.cshtml.cs b/Pages/Index.cshtml.cs
+index c60446f..b0114f6 100644
+--- a/Pages/Index.cshtml.cs
++++ b/Pages/Index.cshtml.cs
+@@ -1,20 +1,29 @@
+ ﻿using System;
+-using System.Collections.Generic;
++using System.IO;
+ using System.Linq;
+ using System.Threading.Tasks;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.Mvc.RazorPages;
+ using Microsoft.Extensions.Logging;
+ using Azure.Core;
++using Azure;
++using Microsoft.AspNetCore.Http;
+ 
+ namespace WebStorageSample.Pages
+ {
++    [RequestSizeLimit(MaxFileSize + 1024 * 1024)]
++    [RequestFormLimits(MultipartBodyLengthLimit = MaxFileSize + 1024 * 1024)]
+     public class IndexModel : PageModel
+     {
++        public const long MaxFileSize = 20 * 1024 * 1024;
+         private readonly ILogger<IndexModel> _logger;
+         private readonly TokenCredential _credential;
+ 
+-        public string DisplayWords { get; private set; }
++        [BindProperty]
++        public IFormFile UploadedFile { get; set; }
++
++        [TempData]
++        public string SuccessMessage { get; set; }
+ 
+         public IndexModel(ILogger<IndexModel> logger, TokenCredential credential)
+         {
+@@ -22,12 +31,67 @@ namespace WebStorageSample.Pages
+             _credential = credential;
+         }
+ 
+-        public async Task OnGetAsync()
++        public void OnGet()
+         {
+-            string content = string.Format("Hello Service Connector! UTC Now: {0}.", DateTimeOffset.UtcNow.ToString());
++        }
++
++        public async Task<IActionResult> OnPostAsync()
++        {
++            if (UploadedFile == null)
++            {
++                ModelState.AddModelError(string.Empty, "Selecciona un archivo antes de subirlo.");
++                return Page();
++            }
++
++            if (UploadedFile.Length > MaxFileSize)
++            {
++                ModelState.AddModelError(string.Empty, "El archivo supera el límite de 20 MB. Selecciona uno más pequeño.");
++                return Page();
++            }
++
++            // Strip client-supplied paths on Windows and Linux, preserving the filename.
++            string fileName = Path.GetFileName(UploadedFile.FileName.Replace('\\', '/'));
++            if (string.IsNullOrWhiteSpace(fileName) || fileName.Length > 1024 || fileName.Any(char.IsControl))
++            {
++                ModelState.AddModelError(string.Empty, "El nombre del archivo no es válido. Renómbralo y vuelve a intentarlo.");
++                return Page();
++            }
++
++            if (!ModelState.IsValid)
++                return Page();
++
++            string endpoint = Environment.GetEnvironmentVariable(Const.ENDPOINT_ENV_KEY);
++            if (string.IsNullOrWhiteSpace(endpoint))
++            {
++                _logger.LogError("Storage endpoint {EnvironmentKey} is not configured.", Const.ENDPOINT_ENV_KEY);
++                ModelState.AddModelError(string.Empty, "El almacenamiento no está configurado. Contacta al administrador.");
++                return Page();
++            }
++
++            try
++            {
++                using (var stream = UploadedFile.OpenReadStream())
++                {
++                    await StorageHelper.UploadBlob(endpoint, Const.CONTAINER_NAME, fileName,
++                        stream, _credential, HttpContext.RequestAborted);
++                }
++
++                SuccessMessage = $"El archivo «{fileName}» se subió correctamente.";
++                // Refreshing the result must not upload the file again.
++                return RedirectToPage();
++            }
++            catch (RequestFailedException exception) when (exception.ErrorCode == "BlobAlreadyExists"
++                || exception.ErrorCode == "ConditionNotMet")
++            {
++                ModelState.AddModelError(string.Empty, "Ya existe un archivo con ese nombre. Renómbralo y vuelve a intentarlo.");
++            }
++            catch (Exception exception) when (!(exception is OperationCanceledException))
++            {
++                _logger.LogError(exception, "File upload failed.");
++                ModelState.AddModelError(string.Empty, "No se pudo subir el archivo. Vuelve a intentarlo; si el problema continúa, contacta al administrador.");
++            }
+ 
+-            await StorageHelper.UploadBlob(Environment.GetEnvironmentVariable(Const.ENDPOINT_ENV_KEY), Const.CONTAINER_NAME, Const.BLOB_NAME, content, _credential);
+-            DisplayWords = await StorageHelper.GetBlob(Environment.GetEnvironmentVariable(Const.ENDPOINT_ENV_KEY), Const.CONTAINER_NAME, Const.BLOB_NAME, _credential);
++            return Page();
+         }
+     }
+ }
+diff --git a/Pages/Shared/_Layout.cshtml b/Pages/Shared/_Layout.cshtml
+index 428d469..7917f79 100644
+--- a/Pages/Shared/_Layout.cshtml
++++ b/Pages/Shared/_Layout.cshtml
+@@ -1,5 +1,5 @@
+ ﻿<!DOCTYPE html>
+-<html lang="en">
++<html lang="es">
+ <head>
+     <meta charset="utf-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+diff --git a/StorageHelper.cs b/StorageHelper.cs
+index 07ab259..036f6f3 100644
+--- a/StorageHelper.cs
++++ b/StorageHelper.cs
+@@ -2,14 +2,32 @@
+ using System.IO;
+ using System.Text;
+ using System.Threading.Tasks;
++using System.Threading;
+ using Azure.Identity;
+ using Azure.Core;
+ using Azure.Storage.Blobs;
++using Azure.Storage.Blobs.Models;
+ 
+ namespace WebStorageSample
+ {
+     public class StorageHelper
+     {
++        // Preserve binary data and reject existing blob names atomically.
++        static public async Task UploadBlob(string containerEndpoint, string containerName, string blobName,
++            Stream contents, TokenCredential credential, CancellationToken cancellationToken = default)
++        {
++            var blobContainerUri = new Uri(new Uri(containerEndpoint), containerName);
++            var containerClient = new BlobContainerClient(blobContainerUri, credential);
++            await containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
++
++            var blobClient = containerClient.GetBlobClient(blobName);
++            await blobClient.UploadAsync(contents, new BlobUploadOptions
++            {
++                HttpHeaders = new BlobHttpHeaders { ContentType = "application/octet-stream" },
++                Conditions = new BlobRequestConditions { IfNoneMatch = Azure.ETag.All }
++            }, cancellationToken);
++        }
++
+         static public async Task UploadBlob(string containerEndpoint, string containerName, string blobName, string blobContents, TokenCredential credential)
+         {
+             var blobContainerUri = new Uri(new Uri(containerEndpoint), containerName);
+diff --git a/wwwroot/css/site.css b/wwwroot/css/site.css
+index e679a8e..2120c09 100644
+--- a/wwwroot/css/site.css
++++ b/wwwroot/css/site.css
+@@ -62,6 +62,50 @@ body {
+   /* Margin bottom by footer height */
+   margin-bottom: 60px;
+ }
++.upload-panel {
++  max-width: 640px;
++  margin: 3rem auto;
++  padding: 2.5rem;
++  border: 1px solid #dce5ef;
++  border-radius: 18px;
++  background: #fff;
++  box-shadow: 0 12px 40px rgba(26, 63, 105, .08);
++}
++.upload-badge {
++  color: #1b6ec2;
++  font-size: .75rem;
++  font-weight: 700;
++  letter-spacing: .1em;
++}
++.upload-heading h1 {
++  margin: .75rem 0;
++  font-size: 2.25rem;
++  font-weight: 700;
++  color: #17324f;
++}
++.upload-heading p, .upload-note, #file-help { color: #526477; }
++.upload-picker {
++  margin-top: 1.75rem;
++  padding: 1.5rem;
++  border: 2px dashed #b9cce0;
++  border-radius: 12px;
++  background: #f5f9fd;
++}
++.upload-picker label { font-weight: 600; color: #17324f; }
++.upload-picker input { display: block; width: 100%; }
++.upload-picker input:focus-visible { outline: 3px solid #1b6ec2; outline-offset: 4px; }
++.selected-file, .upload-message { overflow-wrap: anywhere; }
++.selected-file { margin: 1rem 0 0; color: #17324f; }
++.upload-note { font-size: .875rem; margin: 1rem 0; }
++.upload-button { width: 100%; padding: .85rem; border-radius: 8px; font-weight: 600; }
++.upload-status { margin: .75rem 0 0; color: #17324f; }
++.validation-summary-valid { display: none; }
++.upload-message ul { margin: 0; padding-left: 1.25rem; }
++@media (max-width: 576px) {
++  .upload-panel { margin: 1.25rem auto; padding: 1.25rem; }
++  .upload-heading h1 { font-size: 1.8rem; }
++}
++
+ .footer {
+   position: absolute;
+   bottom: 0;
+diff --git a/FILE_UPLOAD.md b/FILE_UPLOAD.md
+new file mode 100644
+index 0000000..1809329
+--- /dev/null
++++ b/FILE_UPLOAD.md
+@@ -0,0 +1,28 @@
++# Subida de archivos
++
++La página principal permite seleccionar un archivo de cualquier tipo (hasta 20 MB), ver su nombre y tamaño y enviarlo con **Subir archivo**. El botón muestra **Subiendo…** durante el envío. La selección y la subida básica también funcionan sin JavaScript.
++
++Los archivos se guardan como datos binarios en el contenedor `default`, con el nombre original del archivo, sin las rutas que pudiera incluir el cliente. No se sobrescriben blobs existentes: si el nombre ya existe, la página pide renombrar el archivo. También se aceptan archivos vacíos.
++
++La aplicación mantiene `AZURE_STORAGEBLOB_RESOURCEENDPOINT`, las credenciales registradas en `Startup`, Service Connector, las dependencias, .NET 9 y el pipeline actuales. Abrir o recargar la página ya no escribe el blob de demostración `HelloWorld`. No se necesita crear recursos adicionales.
++
++## Verificación local
++
++```powershell
++dotnet restore WebStorageSample.csproj
++dotnet build WebStorageSample.csproj --configuration Release --no-restore
++dotnet publish WebStorageSample.csproj --configuration Release --no-build --output ./publish
++```
++
++Para subir desde desarrollo local, se mantiene la configuración existente: endpoint en `.env` y autenticación con Azure CLI. En producción se usan las credenciales de Service Connector existentes. Los errores técnicos se registran en el servidor; la página muestra mensajes en español.
++
++## Prueba después del despliegue
++
++1. Abrir la Web App, seleccionar un archivo de prueba y pulsar **Subir archivo**.
++2. Confirmar el mensaje de éxito y encontrar el archivo en el contenedor `default`. Descargarlo y comparar su contenido con el original, especialmente para imágenes, PDF o archivos binarios.
++3. Recargar la página: no debe volver a subir el archivo.
++4. Volver a subir el mismo nombre: debe aparecer el aviso de duplicado y conservarse el contenido anterior.
++5. Probar un nombre con espacios o acentos y un archivo vacío.
++6. Probar sin archivo y con un archivo mayor de 20 MB: debe impedirse el envío. El servidor también valida el tamaño si se omite la validación del navegador.
++
++El límite total de petición es 21 MB para permitir el formulario multipart. Peticiones que superen ese límite o el del servidor web pueden ser rechazadas antes de llegar a la página. La subida real, el mensaje de éxito y la detección de duplicados deben verificarse en Azure con las credenciales y permisos actuales.
+diff --git a/wwwroot/js/upload.js b/wwwroot/js/upload.js
+new file mode 100644
+index 0000000..ef70f13
+--- /dev/null
++++ b/wwwroot/js/upload.js
+@@ -0,0 +1,41 @@
++(function () {
++    "use strict";
++    const form = document.getElementById("upload-form");
++    const input = document.getElementById("UploadedFile");
++    const selectedFile = document.getElementById("selected-file");
++    const button = document.getElementById("upload-button");
++    const status = document.getElementById("upload-status");
++    const maxSize = Number(form.dataset.maxFileSize);
++
++    input.addEventListener("change", function () {
++        const file = input.files[0];
++        input.setCustomValidity("");
++        status.textContent = "";
++        if (!file) {
++            selectedFile.textContent = "Ningún archivo seleccionado.";
++            return;
++        }
++        const unit = file.size < 1024 ? "bytes" : file.size < 1024 * 1024 ? "KB" : "MB";
++        const divisor = unit === "bytes" ? 1 : unit === "KB" ? 1024 : 1024 * 1024;
++        const size = (file.size / divisor).toLocaleString("es", { maximumFractionDigits: 2 });
++        selectedFile.textContent = file.name + " · " + size + " " + unit;
++        if (file.size > maxSize) {
++            input.setCustomValidity("El archivo supera el límite de 20 MB. Selecciona uno más pequeño.");
++            input.reportValidity();
++        }
++    });
++
++    form.addEventListener("submit", function () {
++        button.disabled = true;
++        button.textContent = "Subiendo…";
++        status.textContent = "Estamos subiendo tu archivo. Espera a que termine.";
++        form.setAttribute("aria-busy", "true");
++    });
++
++    window.addEventListener("pageshow", function () {
++        button.disabled = false;
++        button.textContent = "Subir archivo";
++        status.textContent = "";
++        form.removeAttribute("aria-busy");
++    });
++}());

@@ -62,6 +62,50 @@ body {
   /* Margin bottom by footer height */
   margin-bottom: 60px;
 }
+.upload-panel {
+  max-width: 640px;
+  margin: 3rem auto;
+  padding: 2.5rem;
+  border: 1px solid #dce5ef;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 40px rgba(26, 63, 105, .08);
+}
+.upload-badge {
+  color: #1b6ec2;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+}
+.upload-heading h1 {
+  margin: .75rem 0;
+  font-size: 2.25rem;
+  font-weight: 700;
+  color: #17324f;
+}
+.upload-heading p, .upload-note, #file-help { color: #526477; }
+.upload-picker {
+  margin-top: 1.75rem;
+  padding: 1.5rem;
+  border: 2px dashed #b9cce0;
+  border-radius: 12px;
+  background: #f5f9fd;
+}
+.upload-picker label { font-weight: 600; color: #17324f; }
+.upload-picker input { display: block; width: 100%; }
+.upload-picker input:focus-visible { outline: 3px solid #1b6ec2; outline-offset: 4px; }
+.selected-file, .upload-message { overflow-wrap: anywhere; }
+.selected-file { margin: 1rem 0 0; color: #17324f; }
+.upload-note { font-size: .875rem; margin: 1rem 0; }
+.upload-button { width: 100%; padding: .85rem; border-radius: 8px; font-weight: 600; }
+.upload-status { margin: .75rem 0 0; color: #17324f; }
+.validation-summary-valid { display: none; }
+.upload-message ul { margin: 0; padding-left: 1.25rem; }
+@media (max-width: 576px) {
+  .upload-panel { margin: 1.25rem auto; padding: 1.25rem; }
+  .upload-heading h1 { font-size: 1.8rem; }
+}
+
 .footer {
   position: absolute;
   bottom: 0;

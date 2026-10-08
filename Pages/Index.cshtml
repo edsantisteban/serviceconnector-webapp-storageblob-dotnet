@@ -1,10 +1,36 @@
 ﻿@page
 @model IndexModel
 @{
-    ViewData["Title"] = "Home page";
+    ViewData["Title"] = "Subir archivo";
 }
 
-<div class="text-center">
-    <h1 class="display-4">@Html.DisplayFor(IndexModel => IndexModel.DisplayWords)</h1>
-    <p>Learn about <a href="https://docs.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
-</div>
+<section class="upload-panel" aria-labelledby="upload-title">
+    <div class="upload-heading">
+        <span class="upload-badge">TU ESPACIO DE ARCHIVOS</span>
+        <h1 id="upload-title">Sube tu archivo</h1>
+        <p>Selecciona un archivo de tu dispositivo y guárdalo en la nube.</p>
+    </div>
+
+    @if (!string.IsNullOrEmpty(Model.SuccessMessage))
+    {
+        <div class="alert alert-success upload-message" role="status">@Model.SuccessMessage</div>
+    }
+    <div asp-validation-summary="All" class="alert alert-danger upload-message" role="alert"></div>
+
+    <form method="post" enctype="multipart/form-data" id="upload-form" data-max-file-size="@IndexModel.MaxFileSize">
+        <div class="upload-picker">
+            <label for="UploadedFile">Seleccionar archivo</label>
+            <p id="file-help">Cualquier tipo de archivo · Máximo 20 MB</p>
+            <input asp-for="UploadedFile" type="file" required aria-describedby="file-help selected-file" />
+            <p id="selected-file" class="selected-file" role="status">Ningún archivo seleccionado.</p>
+        </div>
+        <p class="upload-note">Se conservará el nombre original. Si ya existe, deberás renombrar tu archivo para subirlo.</p>
+        <button type="submit" class="btn btn-primary upload-button" id="upload-button">Subir archivo</button>
+        <p id="upload-status" class="upload-status" role="status"></p>
+        <p class="upload-note">Si ocurre un error, vuelve a seleccionar el archivo para intentarlo de nuevo.</p>
+    </form>
+</section>
+
+@section Scripts {
+    <script src="~/js/upload.js" asp-append-version="true"></script>
+}

@@ -1,10 +1,12 @@
 ﻿using System;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Azure.Core;
 using Azure.Identity;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 
 namespace WebStorageSample
 {
@@ -18,6 +20,22 @@ namespace WebStorageSample
                 : new DefaultAzureCredential();     // en Azure: usa la identidad administrada
         }
 
+        // Sube datos binarios y rechaza nombres de blob ya existentes de forma atómica.
+        static public async Task UploadBlob(string containerEndpoint, string containerName, string blobName,
+            Stream contents, CancellationToken cancellationToken = default)
+        {
+            var blobContainerUri = new Uri(new Uri(containerEndpoint), containerName);
+            var containerClient = new BlobContainerClient(blobContainerUri, GetCredential());
+            await containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+
+            var blobClient = containerClient.GetBlobClient(blobName);
+            await blobClient.UploadAsync(contents, new BlobUploadOptions
+            {
+                HttpHeaders = new BlobHttpHeaders { ContentType = "application/octet-stream" },
+                Conditions = new BlobRequestConditions { IfNoneMatch = Azure.ETag.All }
+            }, cancellationToken);
+        }
+
         static public async Task UploadBlob(string containerEndpoint, string containerName, string blobName, string blobContents)
         {
             var blobContainerUri = new Uri(new Uri(containerEndpoint), containerName);
@@ -25,12 +43,9 @@ namespace WebStorageSample
 
             try
             {
-                // Create the container if it does not exist.
                 await containerClient.CreateIfNotExistsAsync();
 
                 BlobClient blobClient = containerClient.GetBlobClient(blobName);
-
-                // Upload text to a new block blob.
                 byte[] byteArray = Encoding.ASCII.GetBytes(blobContents);
 
                 using (MemoryStream stream = new MemoryStream(byteArray))
@@ -51,7 +66,6 @@ namespace WebStorageSample
 
             try
             {
-                // Create the container if it does not exist.
                 await containerClient.CreateIfNotExistsAsync();
 
                 BlobClient blobClient = containerClient.GetBlobClient(blobName);
